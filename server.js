@@ -1,8 +1,11 @@
 app.get('/process', (req, res) => {
     const podcastLink = req.query.podcastLink;
+    console.log('Received podcast link:', podcastLink);
 
     // Extract the Spotify episode ID from the link
     const episodeId = podcastLink.split('/episode/')[1]?.split('?')[0];
+    console.log('Extracted episode ID:', episodeId);
+
     if (!episodeId) {
         return res.send('Invalid podcast link. Please provide a valid Spotify episode link.');
     }
@@ -17,8 +20,9 @@ app.get('/process', (req, res) => {
     };
 
     require('request').get(options, (error, response, body) => {
+        console.log('Spotify API response:', response && response.statusCode, body);
+
         if (!error && response.statusCode === 200) {
-            // Send episode details to the user
             res.send(`
                 <h1>Episode Details</h1>
                 <p><strong>Title:</strong> ${body.name}</p>
@@ -30,3 +34,4 @@ app.get('/process', (req, res) => {
         }
     });
 });
+
