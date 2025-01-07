@@ -1,29 +1,32 @@
-const express = require('express');
-const app = express();
-
-// Serve the main page
-app.get('/', (req, res) => {
-    res.send(`
-        <html>
-            <body>
-                <h1>Podcast Reference Extractor</h1>
-                <form action="/process" method="GET">
-                    <label for="podcastLink">Enter Podcast Episode Link:</label>
-                    <input type="url" id="podcastLink" name="podcastLink" required>
-                    <button type="submit">Submit</button>
-                </form>
-            </body>
-        </html>
-    `);
-});
-
-// Handle the form submission
 app.get('/process', (req, res) => {
     const podcastLink = req.query.podcastLink;
-    res.send(`You entered: ${podcastLink}`);
-});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    // Extract the Spotify episode ID from the link
+    const episodeId = podcastLink.split('/episode/')[1]?.split('?')[0];
+    if (!episodeId) {
+        return res.send('Invalid podcast link. Please provide a valid Spotify episode link.');
+    }
+
+    // Call Spotify API to get episode details
+    const options = {
+        url: `https://api.spotify.com/v1/episodes/${episodeId}`,
+        headers: {
+            'Authorization': `Bearer BQAZ07eL3jDykI8meSc_HwlzR9txU7cDjgcmgNjm44RxD0coTeyb8PFonshm2y7fcGE5-iUyzL-nE-Bgx7zsyPgYHwEXqVSXa5iOuZ4RN3cEJbk5kdwt8a57FugBGb3qzYpq-DL5EvtEGjCCptF4dhDufB4mVoPtu9a09qPiuTavRZ_JDD5haKNIR5k1PCNTg14XDfSCHYeqphAmA5JSgw`
+        },
+        json: true
+    };
+
+    require('request').get(options, (error, response, body) => {
+        if (!error && response.statusCode === 200) {
+            // Send episode details to the user
+            res.send(`
+                <h1>Episode Details</h1>
+                <p><strong>Title:</strong> ${body.name}</p>
+                <p><strong>Description:</strong> ${body.description}</p>
+                <p><strong>Duration:</strong> ${Math.round(body.duration_ms / 60000)} minutes</p>
+            `);
+        } else {
+            res.send('Failed to fetch episode details. Please try again.');
+        }
+    });
 });
