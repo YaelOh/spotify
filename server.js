@@ -18,15 +18,22 @@ app.get('/', (req, res) => {
         <html>
             <body>
                 <h1>Podcast Insight Finder</h1>
-                <form action="/process" method="GET">
+                <form action="/process" method="POST" enctype="multipart/form-data">
+                    <h2>Option 1: Upload an Audio File</h2>
+                    <label for="audioFile">Upload Podcast Audio File:</label>
+                    <input type="file" id="audioFile" name="audioFile" accept="audio/*"><br><br>
+                    
+                    <h2>Option 2: Provide a Spotify Link</h2>
                     <label for="podcastLink">Enter Podcast Episode Link:</label>
-                    <input type="url" id="podcastLink" name="podcastLink" required>
-                    <button type="submit">Submit</button>
+                    <input type="url" id="podcastLink" name="podcastLink" placeholder="https://open.spotify.com/episode/..."><br><br>
+                    
+                    <button type="submit">Process</button>
                 </form>
             </body>
         </html>
     `);
 });
+
 
 // Spotify Authorization
 app.get('/login', (req, res) => {
@@ -96,48 +103,56 @@ function refreshAccessToken(callback) {
 }
 
 // Process the submitted podcast link
-app.get('/process', (req, res) => {
-    const podcastLink = req.query.podcastLink;
+app.post('/process', upload.single('audioFile'), (req, res) => {
+    const podcastLink = req.body.podcastLink; // Get the Spotify link from the form
+    const audioPath = req.file ? req.file.path : null; // Get the uploaded file (if any)
 
-    // Validate the Spotify link
-    if (!podcastLink.startsWith('https://open.spotify.com/episode/')) {
-        return res.send('Invalid link. Please enter a valid Spotify podcast link.');
-    }
-
-    // Extract the Spotify episode ID from the link
-    const episodeId = podcastLink.split('/episode/')[1]?.split('?')[0];
-    if (!episodeId) {
-        return res.send('Invalid podcast link. Please provide a valid Spotify episode link.');
-    }
-
-    // Refresh token if needed, then make the API call
-    refreshAccessToken((err) => {
-        if (err) {
-            return res.send('Failed to refresh access token. Please try again.');
+    if (podcastLink) {
+        // Handle the Spotify link option
+        const episodeId = podcastLink.split('/episode/')[1]?.split('?')[0];
+        if (!episodeId) {
+            return res.send('Invalid Spotify link. Please provide a valid podcast episode link.');
         }
 
+        // Fetch episode details from Spotify API
         const options = {
             url: `https://api.spotify.com/v1/episodes/${episodeId}`,
             headers: {
-                'Authorization': `Bearer ${accessToken}` // Use the saved access token
+                'Authorization': `Bearer ${accessToken}` // Use the access token
             },
             json: true
         };
 
         request.get(options, (error, response, body) => {
             if (!error && response.statusCode === 200) {
+                const audioPreviewUrl = body.audio_preview_url;
                 res.send(`
-                    <h1>Episode Details</h1>
+                    <h1>Spotify Episode Details</h1>
                     <p><strong>Title:</strong> ${body.name}</p>
                     <p><strong>Description:</strong> ${body.description}</p>
                     <p><strong>Duration:</strong> ${Math.round(body.duration_ms / 60000)} minutes</p>
+                    <h3>Audio Preview</h3>
+                    ${audioPreviewUrl ? `<audio controls src="${audioPreviewUrl}"></audio>` : 'No audio preview available.'}
                 `);
             } else {
-                res.send('Failed to fetch episode details. Please try again.');
+                res.send('Failed to fetch episode details from Spotify. Please try again.');
             }
         });
-    });
+    } else if (audioPath) {
+        // Handle the file upload option
+        res.send(`
+            <h1>File Uploaded Successfully</h1>
+            <p>Path: ${audioPath}</p>
+            <p>Next step: Transcribe the uploaded file.</p>
+        `);
+
+        // TODO: Add transcription logic here (next step)
+        fs.unlinkSync(audioPath); // Clean up the uploaded file after processing
+    } else {
+        res.send('Please provide either a Spotify link or upload a file.');
+    }
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 3000;
