@@ -8,8 +8,9 @@ const CLIENT_ID = 'ced7feabad00473bb6bd9d8952945314';
 const CLIENT_SECRET = '6f2a8e94b47a4927bf23c0c38af9d53f';
 const REDIRECT_URI = 'https://delirious-golden-laugh.glitch.me/callback';
 
-// Global variable to store the access token
-let accessToken = '';
+// Global variables for tokens
+let accessToken = 'BQBN8GFr5MLJWeJSuF23ZhR04yEU-8i1hwOxUZXMYdJpRwUsaLuAjaQhI67n1_LhVwJs85B-BdMVZD13pBzmUYGWP2oP3Zwr5RC0rYjZDrwwTga8aDCeAonpGhZCW1PyAItvkf770cUAiFKnkPlF7pWSRhIXvh4_BvtdqsDvitqh6HVS3GT0t6RyoBFnY9NISLITEUuGos2atk19C1-PHQ';
+let refreshToken = 'AQCfFSEtzIolWOpX1vsA1VHmfwIIEl_Hi8TEMko1df2CrhFlVw9g3iCt8RY8vX1FijiTukgW6onvv-gor1ec482TKr9H8QSPjXOeKQIttciaPugQA_BHUNSYUfahF4p5p0U';
 
 // Main page
 app.get('/', (req, res) => {
@@ -43,7 +44,6 @@ app.get('/login', (req, res) => {
 // Spotify Callback
 app.get('/callback', (req, res) => {
     const code = req.query.code || null;
-    console.log('Authorization code received:', code); // Debug log for received code
 
     const authOptions = {
         url: 'https://accounts.spotify.com/api/token',
@@ -59,16 +59,41 @@ app.get('/callback', (req, res) => {
     };
 
     request.post(authOptions, (error, response, body) => {
-        console.log('Spotify token exchange response:', response && response.statusCode, body); // Debug log for API response
         if (!error && response.statusCode === 200) {
             accessToken = body.access_token; // Save the access token
+            refreshToken = body.refresh_token; // Save the refresh token
             res.send(`Access token received: ${accessToken}`);
         } else {
-            console.error('Token exchange failed:', body); // Debug log for error
-            res.send(`Authorization failed: ${body.error_description || 'Unknown error'}`);
+            res.send('Authorization failed');
         }
     });
 });
+
+// Refresh Access Token
+function refreshAccessToken(callback) {
+    const authOptions = {
+        url: 'https://accounts.spotify.com/api/token',
+        form: {
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken
+        },
+        headers: {
+            'Authorization': 'Basic ' + Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64')
+        },
+        json: true
+    };
+
+    request.post(authOptions, (error, response, body) => {
+        if (!error && response.statusCode === 200) {
+            accessToken = body.access_token; // Update the access token
+            console.log('Access token refreshed:', accessToken);
+            callback(null, accessToken);
+        } else {
+            console.error('Failed to refresh access token:', error || body);
+            callback(error || body);
+        }
+    });
+}
 
 // Process the submitted podcast link
 app.get('/process', (req, res) => {
@@ -85,28 +110,32 @@ app.get('/process', (req, res) => {
         return res.send('Invalid podcast link. Please provide a valid Spotify episode link.');
     }
 
-    // Call Spotify API to get episode details
-    const options = {
-        url: `https://api.spotify.com/v1/episodes/${episodeId}`,
-        headers: {
-            'Authorization': `Bearer ${accessToken}` // Use the saved access token
-        },
-        json: true
-    };
-
-    request.get(options, (error, response, body) => {
-        console.log('Spotify episode API response:', response && response.statusCode, body); // Debug log for API response
-        if (!error && response.statusCode === 200) {
-            res.send(`
-                <h1>Episode Details</h1>
-                <p><strong>Title:</strong> ${body.name}</p>
-                <p><strong>Description:</strong> ${body.description}</p>
-                <p><strong>Duration:</strong> ${Math.round(body.duration_ms / 60000)} minutes</p>
-            `);
-        } else {
-            console.error('Failed to fetch episode details:', body); // Debug log for error
-            res.send('Failed to fetch episode details. Please try again.');
+    // Refresh token if needed, then make the API call
+    refreshAccessToken((err) => {
+        if (err) {
+            return res.send('Failed to refresh access token. Please try again.');
         }
+
+        const options = {
+            url: `https://api.spotify.com/v1/episodes/${episodeId}`,
+            headers: {
+                'Authorization': `Bearer ${accessToken}` // Use the saved access token
+            },
+            json: true
+        };
+
+        request.get(options, (error, response, body) => {
+            if (!error && response.statusCode === 200) {
+                res.send(`
+                    <h1>Episode Details</h1>
+                    <p><strong>Title:</strong> ${body.name}</p>
+                    <p><strong>Description:</strong> ${body.description}</p>
+                    <p><strong>Duration:</strong> ${Math.round(body.duration_ms / 60000)} minutes</p>
+                `);
+            } else {
+                res.send('Failed to fetch episode details. Please try again.');
+            }
+        });
     });
 });
 
