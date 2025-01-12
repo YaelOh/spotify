@@ -5,6 +5,8 @@ const multer = require('multer');
 const fs = require('fs');
 const bodyParser = require('body-parser');
 const app = express();
+const ASSEMBLYAI_API_KEY = 'a4abd1d78e83426b9a1876ec65fa80d7';
+
 
 // Middleware
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -71,11 +73,12 @@ function refreshAccessToken(callback) {
 }
 
 // Process route
-app.post('/process', upload.single('audioFile'), (req, res) => {
+app.post('/process', upload.single('audioFile'), async (req, res) => {
     const podcastLink = req.body.podcastLink;
     const audioPath = req.file ? req.file.path : null;
 
     if (podcastLink) {
+        // Handle Spotify link (already implemented)
         const episodeId = podcastLink.split('/episode/')[1]?.split('?')[0];
         if (!episodeId) {
             return res.send('Invalid Spotify link.');
@@ -104,21 +107,92 @@ app.post('/process', upload.single('audioFile'), (req, res) => {
             });
         });
     } else if (audioPath) {
-        res.send(`
-            <h1>Audio File Uploaded</h1>
-            <p>Path: ${audioPath}</p>
-            <p>Next step: Add transcription logic to process the audio file.</p>
-        `);
-
-        // Clean up uploaded file
-        fs.unlinkSync(audioPath);
+        // Handle file upload
+        try {
+            const transcriptText = await transcribeAudio(audioPath);
+            res.send(`
+                <h1>Transcription</h1>
+                <p>${transcriptText}</p>
+            `);
+        } catch (error) {
+            res.send('Failed to transcribe audio file. Please try again.');
+        } finally {
+            // Clean up uploaded file
+            fs.unlinkSync(audioPath);
+        }
     } else {
         res.send('Please upload a file or provide a Spotify link.');
     }
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+const axios = require('axios');
+
+// Transcribe Audio File
+async function transcribeAudio(filePath) {
+    try {
+        // Step 1: Upload the audio file to AssemblyAI
+        const uploadResponse = await axios.post(
+            'https://api.assemblyai.com/v2/upload',
+            require('fs').createReadStream(filePath),
+            {
+                headers: {
+                    'authorization': ASSEMBLYAI_API_KEY,
+                    'Transfer-Encoding': 'chunked'
+                }
+            }
+        );
+        const audioUrl = uploadResponse.data.upload_url;
+
+        // Step 2: Request transcription
+        const transcriptResponse = await axios.post(
+            'https://api.assemblyai.com/v2/transcript',
+            {
+                audio_url: audioUrl
+            },
+            {
+                headers: {
+                    authorization: ASSEMBLYAI_API_KEY
+                }
+            }
+        );
+
+        const transcriptId = transcriptResponse.data.id;
+
+        // Step 3: Poll for transcription completion
+        let status = 'processing';
+        let transcriptText = '';
+
+        while (status === 'processing' || status === 'queued') {
+            const pollingResponse = await axios.get(
+                `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
+                {
+                    headers: {
+                        authorization: ASSEMBLYAI_API_KEY
+                    }
+                }
+            );
+            status = pollingResponse.data.status;
+
+            if (status === 'completed') {
+                transcriptText = pollingResponse.data.text;
+            } else if (status === 'failed') {
+                throw new Error('Transcription failed');
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before polling again
+        }
+
+        return transcriptText;
+    } catch (error) {
+        console.error('Error during transcription:', error);
+        throw error;
+    }
+}
+
