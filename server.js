@@ -3,6 +3,7 @@ const multer = require('multer');
 const fs = require('fs');
 const bodyParser = require('body-parser');
 const { exec } = require('child_process');
+const axios = require('axios');
 const app = express();
 const ASSEMBLYAI_API_KEY = 'a4abd1d78e83426b9a1876ec65fa80d7';
 
@@ -96,13 +97,30 @@ app.post('/process', upload.single('audioFile'), async (req, res) => {
             const transcriptText = await transcribeAudio(audioPath);
             const references = await extractReferences(transcriptText);
 
+            const renderReferences = (category, refs) =>
+                refs.length
+                    ? `<h3>${category}</h3><ul>${refs
+                          .map(
+                              (ref) =>
+                                  `<li>
+                                      <strong>${ref.text}</strong><br>
+                                      <em>Snippet:</em> ${ref.snippet}<br>
+                                      <em>Time:</em> ${ref.timestamp}
+                                  </li>`
+                          )
+                          .join('')}</ul>`
+                    : `<h3>${category}</h3><p>No references found.</p>`;
+
             res.send(`
                 <h1>Transcription</h1>
                 <p>${transcriptText}</p>
                 <h2>Extracted References</h2>
-                <ul>${references.map((ref) => `<li>${ref}</li>`).join('')}</ul>
+                ${renderReferences("Books", references.books)}
+                ${renderReferences("People", references.people)}
+                ${renderReferences("Others", references.others)}
             `);
         } catch (error) {
+            console.error('Failed to process audio file:', error.message);
             res.send('Failed to process audio file. Please try again.');
         } finally {
             fs.unlinkSync(audioPath);
@@ -120,7 +138,13 @@ function extractReferences(transcriptText) {
                 console.error('Error extracting references:', error);
                 reject(error);
             } else {
-                resolve(JSON.parse(stdout));
+                try {
+                    const references = JSON.parse(stdout);
+                    resolve(references);
+                } catch (parseError) {
+                    console.error('Error parsing references JSON:', parseError);
+                    reject(parseError);
+                }
             }
         });
 
@@ -128,14 +152,6 @@ function extractReferences(transcriptText) {
         pythonProcess.stdin.end();
     });
 }
-
-// Start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
-
-const axios = require('axios');
 
 // Transcribe Audio File
 async function transcribeAudio(filePath) {
