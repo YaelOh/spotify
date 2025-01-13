@@ -148,6 +148,16 @@ function extractReferences(transcriptText) {
             }
         });
 
+        pythonProcess.stdin.on('error', (err) => {
+            console.error('Error in Python stdin stream:', err);
+            reject(err);
+        });
+
+        pythonProcess.stdout.on('error', (err) => {
+            console.error('Error in Python stdout stream:', err);
+            reject(err);
+        });
+
         pythonProcess.stdin.write(transcriptText);
         pythonProcess.stdin.end();
     });
