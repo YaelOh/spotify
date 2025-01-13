@@ -195,4 +195,3 @@ async function transcribeAudio(filePath) {
         throw error;
     }
 }
-
