@@ -4,6 +4,7 @@ const request = require('request');
 const multer = require('multer');
 const fs = require('fs');
 const bodyParser = require('body-parser');
+const { exec } = require('child_process');
 const app = express();
 const ASSEMBLYAI_API_KEY = 'a4abd1d78e83426b9a1876ec65fa80d7';
 
@@ -110,12 +111,16 @@ app.post('/process', upload.single('audioFile'), async (req, res) => {
         // Handle file upload
         try {
             const transcriptText = await transcribeAudio(audioPath);
+            const references = await extractReferences(transcriptText);
+
             res.send(`
                 <h1>Transcription</h1>
                 <p>${transcriptText}</p>
+                <h2>Extracted References</h2>
+                <ul>${references.map((ref) => `<li>${ref}</li>`).join('')}</ul>
             `);
         } catch (error) {
-            res.send('Failed to transcribe audio file. Please try again.');
+            res.send('Failed to process audio file. Please try again.');
         } finally {
             // Clean up uploaded file
             fs.unlinkSync(audioPath);
@@ -125,6 +130,22 @@ app.post('/process', upload.single('audioFile'), async (req, res) => {
     }
 });
 
+// Function to extract references using Python script
+function extractReferences(transcriptText) {
+    return new Promise((resolve, reject) => {
+        const pythonProcess = exec('python3 extract_references.py', (error, stdout, stderr) => {
+            if (error) {
+                console.error('Error extracting references:', error);
+                reject(error);
+            } else {
+                resolve(JSON.parse(stdout));
+            }
+        });
+
+        pythonProcess.stdin.write(transcriptText);
+        pythonProcess.stdin.end();
+    });
+}
 
 // Start the server
 const PORT = process.env.PORT || 3000;
